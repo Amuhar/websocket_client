@@ -39,7 +39,6 @@ new(Protocol, Host, Port, Path, Transport, Key) ->
      key = Key
     }.
 
-
 %% @doc Mapping from opcode to opcode name
 -spec opcode_to_name(opcode()) ->
     atom().

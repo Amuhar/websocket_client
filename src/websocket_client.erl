@@ -103,7 +103,8 @@
          buffer = <<>> :: binary(),
          reconnect :: boolean(),
          reconnect_tref = undefined :: undefined | reference(),
-         ka_attempts = 0 :: non_neg_integer()
+         ka_attempts = 0 :: non_neg_integer(),
+         proxy = undefined
         }).
 
 %% @doc Start the websocket client
@@ -191,8 +192,15 @@ init([Protocol, Host, Port, Path, Handler, HandlerArgs, Opts]) ->
                   handler   = {Handler, HState},
                   reconnect = Reconnect
                  },
+    Context1 =  set_proxy(Context0, Opts),
+
     Connect andalso gen_fsm:send_event(self(), connect),
-    {ok, disconnected, Context0}.
+    {ok, disconnected, Context1}.
+
+set_proxy(Context, Opts) ->
+    Host = proplists:get_value(proxy_host, Opts),
+    Port = proplists:get_value(proxy_port, Opts),
+    Context#context{proxy = {Host, Port}}.
 
 -spec transport(ws | wss, {verify | verify_fun, term()},
                 list(inet:option())) -> #transport{}.
@@ -247,10 +255,10 @@ connect(#context{
            transport=T,
            wsreq=WSReq0,
            headers=Headers,
-           target={_Protocol, Host, Port, _Path},
            ka_attempts=KAs
-          }=Context) ->
+          } = Context) ->
     Context2 = maybe_cancel_reconnect(Context),
+    {Host, Port} = get_target(Context),
     case (T#transport.mod):connect(Host, Port, T#transport.opts, 6000) of
         {ok, Socket} ->
             WSReq1 = websocket_req:socket(Socket, WSReq0),
@@ -270,6 +278,11 @@ connect(#context{
         {error,_}=Error ->
             disconnect(Error, Context2)
     end.
+
+get_target(#context{proxy = undefined, target={_Protocol, Host, Port, _Path}} = Context) ->
+    {Host, Port};
+get_target(#context{proxy = Proxy}) ->
+    Proxy.
 
 disconnect(Reason, #context{
                       wsreq=WSReq0,
