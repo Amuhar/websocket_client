@@ -252,14 +252,15 @@ terminate(_Reason, _StateName,
     ok.
 
 connect(#context{
+           proxy = undefined,
            transport=T,
            wsreq=WSReq0,
            headers=Headers,
-           ka_attempts=KAs
+           target={_Protocol, Host, Port, _Path}},
+           ka_attempts = KAs
           } = Context) ->
     Context2 = maybe_cancel_reconnect(Context),
-    {Host, Port} = get_target(Context),
-    case (T#transport.mod):connect(Host, Port, T#transport.opts, 6000) of
+    case open_connection(Context2) of
         {ok, Socket} ->
             WSReq1 = websocket_req:socket(Socket, WSReq0),
             case send_handshake(WSReq1, Headers) of
@@ -277,12 +278,19 @@ connect(#context{
             end;
         {error,_}=Error ->
             disconnect(Error, Context2)
-    end.
+    end;
 
-get_target(#context{proxy = undefined, target={_Protocol, Host, Port, _Path}} = Context) ->
-    {Host, Port};
-get_target(#context{proxy = Proxy}) ->
-    Proxy.
+open_connection(#context{
+                    proxy = undefined,
+                    transport = T,
+                    target = {_Protocol, Host, Port, _Path}}
+                }) ->
+    (T#transport.mod):connect(Host, Port, T#transport.opts);
+open_connection(#context{
+                    proxy = {Host, Port}
+                }) ->
+    Opts = [{mode, binary},{active, true},{packet, 0}],
+    gen_tcp:connect(Host, Port, Opts).
 
 disconnect(Reason, #context{
                       wsreq=WSReq0,
@@ -394,32 +402,41 @@ handle_info({TransError, _Socket, Reason},
 handle_info({Trans, _Socket, Data},
             handshaking,
             #context{
-               transport=#transport{ name=Trans },
-               wsreq=WSReq1,
-               handler={Handler, HState0},
-               buffer=Buffer
-              }=Context) ->
+               transport = #transport{ name=Trans },
+               wsreq = WSReq0,
+               handler = {Handler, HState0},
+               buffer = Buffer
+              } = Context0) ->
     MaybeHandshakeResp = << Buffer/binary, Data/binary >>,
-    case wsc_lib:validate_handshake(MaybeHandshakeResp, websocket_req:key(WSReq1)) of
-        {error,_}=Error ->
-            disconnect(Error, Context);
+    case wsc_lib:validate_handshake(MaybeHandshakeResp, websocket_req:key(WSReq0)) of
+        {error,_} = Error ->
+            disconnect(Error, Context0);
         {notfound, _} ->
-            {next_state, handshaking, Context#context{buffer=MaybeHandshakeResp}};
+            {next_state, handshaking, Context0#context{buffer = MaybeHandshakeResp}};
         {ok, Remaining} ->
-            {ok, HState2, KeepAlive} =
-                case Handler:onconnect(WSReq1, HState0) of
-                    {ok, HState1} ->
-                        KA = websocket_req:keepalive(WSReq1),
-                        {ok, HState1, KA};
-                    {ok, _HS1, KA}=Result ->
-                        erlang:send_after(KA, self(), keepalive),
-                        Result
-                end,
-            WSReq2 = websocket_req:keepalive(KeepAlive, WSReq1),
-            handle_websocket_frame(Remaining, Context#context{
-                                                wsreq=WSReq2,
-                                                handler={Handler, HState2},
-                                                buffer= <<>>})
+            case maybe_upgrade_socket(Context0) of
+                {ok, #context{wsreq = WSReq1} = Context1} ->
+                    {ok, HState2, KeepAlive} =
+                        case Handler:onconnect(WSReq1, HState0) of
+                            {ok, HState1} ->
+                                KA = websocket_req:keepalive(WSReq1),
+                                {ok, HState1, KA};
+                            {ok, _HS1, KA}=Result ->
+                                erlang:send_after(KA, self(), keepalive),
+                                Result
+                        end,
+                    WSReq2 = websocket_req:keepalive(KeepAlive, WSReq1),
+                    handle_websocket_frame(
+                      Remaining,
+                      Context1#context{
+                                wsreq = WSReq2,
+                                handler = {Handler, HState2},
+                                buffer = <<>>
+                      }
+                    );
+                {error, Error} ->
+                  {stop, error, Context}
+            end
     end;
 handle_info({Trans, _Socket, Data},
             connected,
@@ -459,6 +476,24 @@ handle_info(Msg, State,
            erlang:get_stacktrace()]),
         websocket_close(WSReq, Handler, HState0, Reason),
         {stop, Reason, Context}
+    end.
+
+maybe_upgrade_socket(#context{proxy = undefined} = Context) ->
+    {ok, Context};
+maybe_upgrade_socket(#context{transport = T, wsreq = Req0} = Context) ->
+    case T#transport.name of
+        ssl ->
+            Socket = websocket_req:socket(Req0),
+            case ssl:connect(Socket, T#transport.opts) of
+                {ok, SSLSocket} ->
+                  Req1 = websocket_req:socket(SSLSocket, Req0),
+                  {ok, Context#context{wsreq = Req1}};
+                {error, Error} ->
+                    gen_tcp:close(Socket),
+                    {error, Error}
+            end;    
+        tcp ->
+            {ok, Context}
     end.
 
 % Recursively handle all frames that are in the buffer;
