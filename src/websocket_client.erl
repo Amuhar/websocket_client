@@ -410,6 +410,7 @@ handle_info({Trans, _Socket, Data},
     MaybeHandshakeResp = << Buffer/binary, Data/binary >>,
     case wsc_lib:validate_handshake(MaybeHandshakeResp, websocket_req:key(WSReq0)) of
         {error,_} = Error ->
+            ok = {Error, MaybeHandshakeResp},
             disconnect(Error, Context0);
         {notfound, _} ->
             {next_state, handshaking, Context0#context{buffer = MaybeHandshakeResp}};
