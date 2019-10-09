@@ -264,7 +264,6 @@ connect(#context{
             WSReq1 = websocket_req:socket(Socket, WSReq0),
             case send_handshake(WSReq1, Headers, Context) of
                 ok ->
-                    WSReq1 = WSReq0,
                     case websocket_req:keepalive(WSReq1) of
                         infinity ->
                             {next_state, handshaking, Context2#context{ wsreq=WSReq1}};
@@ -415,6 +414,7 @@ handle_info({Trans, _Socket, Data},
         {notfound, _} ->
             {next_state, handshaking, Context0#context{buffer = MaybeHandshakeResp}};
         {ok, Remaining} ->
+            ok = Remaining,
             case maybe_upgrade_socket(Context0) of
                 {ok, #context{wsreq = WSReq1} = Context1} ->
                     {ok, HState2, KeepAlive} =
