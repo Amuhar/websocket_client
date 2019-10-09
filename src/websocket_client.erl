@@ -252,7 +252,6 @@ terminate(_Reason, _StateName,
     ok.
 
 connect(#context{
-           proxy = undefined,
            transport=T,
            wsreq=WSReq0,
            headers=Headers,
