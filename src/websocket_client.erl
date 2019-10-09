@@ -264,6 +264,7 @@ connect(#context{
             WSReq1 = websocket_req:socket(Socket, WSReq0),
             case send_handshake(WSReq1, Headers, Context) of
                 ok ->
+                    WSReq1 = WSReq0,
                     case websocket_req:keepalive(WSReq1) of
                         infinity ->
                             {next_state, handshaking, Context2#context{ wsreq=WSReq1}};
@@ -273,6 +274,7 @@ connect(#context{
                             {next_state, handshaking, Context2#context{wsreq=WSReq2, ka_attempts=(KAs+1)}}
                     end;
                 Error ->
+                    ok = Error,
                     disconnect(Error, Context2)
             end;
         {error,_}=Error ->
