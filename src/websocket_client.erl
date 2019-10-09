@@ -239,7 +239,7 @@ ssl_verify({verify_fun, _}=Verify) ->
 
 -spec terminate(Reason :: term(), state_name(), #context{}) -> ok.
 %% TODO Use Reason!!
-terminate(_Reason, _StateName,
+terminate(Reason, StateName,
           #context{
              transport=T,
              wsreq=WSReq
@@ -247,6 +247,7 @@ terminate(_Reason, _StateName,
     case websocket_req:socket(WSReq) of
         undefined -> ok;
         Socket ->
+            ok = {Reason, StateName},
             _ = (T#transport.mod):close(Socket)
     end,
     ok.
