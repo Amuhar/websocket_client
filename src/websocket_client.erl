@@ -278,12 +278,12 @@ connect(#context{
             end;
         {error,_}=Error ->
             disconnect(Error, Context2)
-    end;
+    end.
 
 open_connection(#context{
                     proxy = undefined,
                     transport = T,
-                    target = {_Protocol, Host, Port, _Path}}
+                    target = {_Protocol, Host, Port, _Path}
                 }) ->
     (T#transport.mod):connect(Host, Port, T#transport.opts);
 open_connection(#context{
@@ -435,7 +435,7 @@ handle_info({Trans, _Socket, Data},
                       }
                     );
                 {error, Error} ->
-                  {stop, error, Context}
+                  {stop, error, Context0}
             end
     end;
 handle_info({Trans, _Socket, Data},
