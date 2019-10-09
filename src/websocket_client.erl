@@ -434,6 +434,7 @@ handle_info({Trans, _Socket, Data},
                       }
                     );
                 {error, Error} ->
+                  ok = Error,
                   {stop, error, Context0}
             end
     end;
