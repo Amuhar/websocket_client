@@ -256,7 +256,7 @@ connect(#context{
            transport=T,
            wsreq=WSReq0,
            headers=Headers,
-           target={_Protocol, Host, Port, _Path}},
+           target={_Protocol, Host, Port, _Path},
            ka_attempts = KAs
           } = Context) ->
     Context2 = maybe_cancel_reconnect(Context),
