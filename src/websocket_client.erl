@@ -262,7 +262,7 @@ connect(#context{
     case open_connection(Context2) of
         {ok, Socket} ->
             WSReq1 = websocket_req:socket(Socket, WSReq0),
-            case send_handshake(WSReq1, Headers) of
+            case send_handshake(WSReq1, Headers, Context) of
                 ok ->
                     case websocket_req:keepalive(WSReq1) of
                         infinity ->
@@ -270,7 +270,7 @@ connect(#context{
                         KeepAlive ->
                             NewTimer = erlang:send_after(KeepAlive, self(), keepalive),
                             WSReq2 = websocket_req:set([{keepalive_timer, NewTimer}], WSReq1),
-                            {next_state, handshaking, Context2#context{ wsreq=WSReq2, ka_attempts=(KAs+1)}}
+                            {next_state, handshaking, Context2#context{wsreq=WSReq2, ka_attempts=(KAs+1)}}
                     end;
                 Error ->
                     disconnect(Error, Context2)
@@ -576,13 +576,18 @@ handle_response({close, Payload, HandlerState}, Handler, WSReq) ->
     {close, normal, WSReq, Handler, HandlerState}.
 
 %% @doc Send http upgrade request and validate handshake response challenge
--spec send_handshake(WSReq :: websocket_req:req(), [{string(), string()}]) ->
+-spec send_handshake(WSReq :: websocket_req:req(), [{string(), string()}], #context{}) ->
     ok
     | {error, term()}.
-send_handshake(WSReq, ExtraHeaders) ->
+send_handshake(WSReq, ExtraHeaders, #context{proxy = Proxy} = Context) ->
     Handshake = wsc_lib:create_handshake(WSReq, ExtraHeaders),
     [Transport, Socket] = websocket_req:get([transport, socket], WSReq),
-    (Transport#transport.mod):send(Socket, Handshake).
+    case Proxy of
+      undefined ->
+          (Transport#transport.mod):send(Socket, Handshake);
+      {_Host, _Port} ->
+          gen_tcp:send(Socket, Handshake)
+    end.
 
 %% @doc Send frame to server
 encode_and_send(Frame, WSReq) ->
