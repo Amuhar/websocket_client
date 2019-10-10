@@ -537,7 +537,6 @@ maybe_upgrade_socket(#context{transport = T, wsreq = Req0} = Context) ->
 % Recursively handle all frames that are in the buffer;
 % If the last frame is incomplete, leave it in the buffer and wait for more.
 handle_websocket_frame(Data, #context{}=Context0, NextState) ->
-    "" = Data,
     Context = Context0#context{ka_attempts=0},
     #context{
                handler={Handler, HState0},
