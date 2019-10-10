@@ -194,15 +194,10 @@ init([Protocol, Host, Port, Path, Handler, HandlerArgs, Opts]) ->
                   handler   = {Handler, HState},
                   reconnect = Reconnect
                  },
-    Context1 =  set_proxy(Context0, Opts),
+    Context1 =  Context0#context{proxy = proplists:get_value(proxy, Opts)},
 
     Connect andalso gen_fsm:send_event(self(), connect),
     {ok, disconnected, Context1}.
-
-set_proxy(Context, Opts) ->
-    Host = proplists:get_value(proxy_host, Opts),
-    Port = proplists:get_value(proxy_port, Opts),
-    Context#context{proxy = {Host, Port}}.
 
 -spec transport(ws | wss, {verify | verify_fun, term()},
                 list(inet:option())) -> #transport{}.
@@ -263,7 +258,6 @@ connect(#context{
     Context2 = maybe_cancel_reconnect(Context),
     case open_connection(Context2) of
         {ok, Socket} ->
-            ok = Socket,
             WSReq1 = websocket_req:socket(Socket, WSReq0),
             maybe_send_proxy_handshake(WSReq1, Headers, Context2); 
             % case websocket_req:keepalive(WSReq1) of
@@ -283,7 +277,6 @@ open_connection(#context{
                     transport = T,
                     target = {_Protocol, Host, Port, _Path}
                 }) ->
-    ok = T#transport.opts,
     (T#transport.mod):connect(Host, Port, T#transport.opts);
 open_connection(#context{
                     proxy = {Host, Port}
@@ -292,7 +285,6 @@ open_connection(#context{
     gen_tcp:connect(Host, Port, Opts).
 
 maybe_send_proxy_handshake(WSReq, Headers, #context{proxy = undefined} = Context) ->
-    ok = WSReq,
     case send_handshake(WSReq, Headers, Context) of
         ok ->
             {next_state, handshaking,  Context#context{wsreq = WSReq}};
@@ -634,13 +626,11 @@ send_proxy_handshake(WSReq, ExtraHeaders, Context) ->
 
 %% @doc Send http upgrade request and validate handshake response challenge
 -spec send_handshake(Handshake :: iolist(), WSReq :: websocket_req:req(), [{string(), string()}], #context{}) ->
-    ok
-    | {error, term()}.
+    ok | {error, term()}.
 send_handshake(Handshake, WSReq, ExtraHeaders, #context{proxy = Proxy} = Context) ->
     [Transport, Socket] = websocket_req:get([transport, socket], WSReq),
     case Proxy of
       undefined ->
-          transport = Transport#transport.mod,
           (Transport#transport.mod):send(Socket, Handshake);
       {_Host, _Port} ->
           gen_tcp:send(Socket, Handshake)
