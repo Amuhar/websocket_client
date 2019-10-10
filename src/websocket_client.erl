@@ -430,10 +430,8 @@ handle_info({Trans, _Socket, Data},
         {ok, Remaining} ->
             case send_handshake(WSReq0, Headers, Context0) of
                 ok ->
-                    7 = WSReq0,
                     handle_websocket_frame(Remaining, Context0#context{buffer = <<>>}, handshaking);
                 {error, Error} ->
-                    9 = Error,
                   {stop, error, Context0}
             end
     end;
@@ -539,6 +537,7 @@ maybe_upgrade_socket(#context{transport = T, wsreq = Req0} = Context) ->
 % Recursively handle all frames that are in the buffer;
 % If the last frame is incomplete, leave it in the buffer and wait for more.
 handle_websocket_frame(Data, #context{}=Context0, NextState) ->
+    "" = Data,
     Context = Context0#context{ka_attempts=0},
     #context{
                handler={Handler, HState0},
@@ -593,6 +592,7 @@ handle_websocket_frame(Data, #context{}=Context0, NextState) ->
                                       wsreq=WSReqN,
                                       buffer=BufferN}};
         {close, _Reason, WSReqN} ->
+            7 = WSReqN,
             {next_state, disconnected, Context#context{wsreq=WSReqN,
                                                        buffer= <<>>}}
     end.
