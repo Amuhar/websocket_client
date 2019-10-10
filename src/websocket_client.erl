@@ -174,7 +174,7 @@ init([Protocol, Host, Port, Path, Handler, HandlerArgs, Opts]) ->
         end,
     SSLVerify = proplists:get_value(ssl_verify, Opts, verify_none),
     SockOpts  = proplists:get_value(socket_opts, Opts, []),
-    Transport = transport(ws, ssl_verify(SSLVerify), SockOpts),
+    Transport = transport(Protocol, ssl_verify(SSLVerify), SockOpts),
     WSReq = websocket_req:new(
                 Protocol, Host, Port, Path,
                 Transport, wsc_lib:generate_ws_key()
@@ -254,10 +254,10 @@ terminate(Reason, StateName,
     ok.
 
 connect(#context{
-           transport=T,
-           wsreq=WSReq0,
-           headers=Headers,
-           target={_Protocol, Host, Port, _Path},
+           transport = _T,
+           wsreq = WSReq0,
+           headers = Headers,
+           target = {_Protocol, Host, Port, _Path},
            ka_attempts = KAs
           } = Context) ->
     Context2 = maybe_cancel_reconnect(Context),
@@ -273,7 +273,7 @@ connect(#context{
             %         WSReq2 = websocket_req:set([{keepalive_timer, NewTimer}], WSReq1),
             %         {next_state, handshaking, Context2#context{wsreq=WSReq2, ka_attempts=(KAs+1)}}
             % end;
-        {error,_}=Error ->
+        {error,_} = Error ->
             disconnect(Error, Context2)
     end.
 
@@ -637,6 +637,7 @@ send_handshake(Handshake, WSReq, ExtraHeaders, #context{proxy = Proxy} = Context
     [Transport, Socket] = websocket_req:get([transport, socket], WSReq),
     case Proxy of
       undefined ->
+          transport = Transport#transport.mod,
           (Transport#transport.mod):send(Socket, Handshake);
       {_Host, _Port} ->
           gen_tcp:send(Socket, Handshake)
