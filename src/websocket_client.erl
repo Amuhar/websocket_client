@@ -264,20 +264,15 @@ connect(#context{
     case open_connection(Context2) of
         {ok, Socket} ->
             WSReq1 = websocket_req:socket(Socket, WSReq0),
-            case send_proxy_handshake(WSReq1, Headers, Context) of
-                ok ->
-                    % case websocket_req:keepalive(WSReq1) of
-                    %     infinity ->
-                            {next_state, proxy_handshaking, Context2#context{ wsreq=WSReq1}};
-                    %     KeepAlive ->
-                    %         NewTimer = erlang:send_after(KeepAlive, self(), keepalive),
-                    %         WSReq2 = websocket_req:set([{keepalive_timer, NewTimer}], WSReq1),
-                    %         {next_state, handshaking, Context2#context{wsreq=WSReq2, ka_attempts=(KAs+1)}}
-                    % end;
-                Error ->
-                    ok = Error,
-                    disconnect(Error, Context2)
-            end;
+            maybe_send_proxy_handshake(WSReq1, Headers, Context2); 
+            % case websocket_req:keepalive(WSReq1) of
+            %     infinity ->
+            %         {next_state, proxy_handshaking, Context2#context{ wsreq=WSReq1}};
+            %     KeepAlive ->
+            %         NewTimer = erlang:send_after(KeepAlive, self(), keepalive),
+            %         WSReq2 = websocket_req:set([{keepalive_timer, NewTimer}], WSReq1),
+            %         {next_state, handshaking, Context2#context{wsreq=WSReq2, ka_attempts=(KAs+1)}}
+            % end;
         {error,_}=Error ->
             disconnect(Error, Context2)
     end.
@@ -293,6 +288,21 @@ open_connection(#context{
                 }) ->
     Opts = [{mode, binary},{active, true},{packet, 0}],
     gen_tcp:connect(Host, Port, Opts).
+
+maybe_send_proxy_handshake(WSReq, Headers, #context{proxy = undefined} = Context) ->
+    case send_handshake(WSReq, Headers, Context) of
+        ok ->
+            {next_state, handshaking,  Context#context{wsreq = WSReq}};
+        Error ->
+            disconnect(Error, Context)
+    end;
+maybe_send_proxy_handshake(WSReq, Headers, #context{proxy = {_Host, _Port}} = Context) ->
+    case send_proxy_handshake(WSReq, Headers, Context) of
+        ok ->
+            {next_state, proxy_handshaking,  Context#context{wsreq = WSReq}};
+        Error ->
+            disconnect(Error, Context)
+    end.
 
 disconnect(Reason, #context{
                       wsreq=WSReq0,
