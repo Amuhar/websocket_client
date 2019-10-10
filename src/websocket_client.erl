@@ -172,7 +172,7 @@ init([Protocol, Host, Port, Path, Handler, HandlerArgs, Opts]) ->
         end,
     SSLVerify = proplists:get_value(ssl_verify, Opts, verify_none),
     SockOpts  = proplists:get_value(socket_opts, Opts, []),
-    Transport = transport(Protocol, ssl_verify(SSLVerify), SockOpts),
+    Transport = transport(ws, ssl_verify(SSLVerify), SockOpts),
     WSReq = websocket_req:new(
                 Protocol, Host, Port, Path,
                 Transport, wsc_lib:generate_ws_key()
@@ -247,7 +247,6 @@ terminate(Reason, StateName,
     case websocket_req:socket(WSReq) of
         undefined -> ok;
         Socket ->
-            ok = {Reason, StateName},
             _ = (T#transport.mod):close(Socket)
     end,
     ok.
@@ -367,23 +366,23 @@ handle_sync_event(Event, {_From, Tag}, State, Context) ->
 -spec handle_info(Info :: term(), state_name(), #context{}) ->
     {next_state, state_name(), #context{}}
     | {stop, Reason :: term(), #context{}}.
-handle_info(keepalive, KAState, #context{ wsreq=WSReq, ka_attempts=KAAttempts }=Context)
-  when KAState =:= handshaking; KAState =:= connected ->
-    [KeepAlive, KATimer, KAMax] =
-        websocket_req:get([keepalive, keepalive_timer, keepalive_max_attempts], WSReq),
-    case KATimer of
-        undefined -> ok;
-        _ -> erlang:cancel_timer(KATimer)
-    end,
-    case KAAttempts of
-        KAMax->
-            disconnect({error, keepalive_timeout}, Context);
-        _ ->
-            ok = encode_and_send({ping, <<"foo">>}, WSReq),
-            NewTimer = erlang:send_after(KeepAlive, self(), keepalive),
-            WSReq1 = websocket_req:set([{keepalive_timer, NewTimer}], WSReq),
-            {next_state, KAState, Context#context{wsreq=WSReq1, ka_attempts=(KAAttempts+1)}}
-    end;
+% handle_info(keepalive, KAState, #context{ wsreq=WSReq, ka_attempts=KAAttempts }=Context)
+%   when KAState =:= handshaking; KAState =:= connected ->
+%     [KeepAlive, KATimer, KAMax] =
+%         websocket_req:get([keepalive, keepalive_timer, keepalive_max_attempts], WSReq),
+%     case KATimer of
+%         undefined -> ok;
+%         _ -> erlang:cancel_timer(KATimer)
+%     end,
+%     case KAAttempts of
+%         KAMax->
+%             disconnect({error, keepalive_timeout}, Context);
+%         _ ->
+%             ok = encode_and_send({ping, <<"foo">>}, WSReq),
+%             NewTimer = erlang:send_after(KeepAlive, self(), keepalive),
+%             WSReq1 = websocket_req:set([{keepalive_timer, NewTimer}], WSReq),
+%             {next_state, KAState, Context#context{wsreq=WSReq1, ka_attempts=(KAAttempts+1)}}
+%     end;
 %% TODO Move Socket into #transport{} from #websocket_req{} so that we can
 %% match on it here
 handle_info({TransClosed, _Socket}, _CurrState,
@@ -416,7 +415,6 @@ handle_info({Trans, _Socket, Data},
         {notfound, _} ->
             {next_state, handshaking, Context0#context{buffer = MaybeHandshakeResp}};
         {ok, Remaining} ->
-            ok = Remaining,
             case maybe_upgrade_socket(Context0) of
                 {ok, #context{wsreq = WSReq1} = Context1} ->
                     {ok, HState2, KeepAlive} =
@@ -467,7 +465,7 @@ handle_info(Msg, State,
                                      wsreq=WSReqN,
                                      handler={Handler, HStateN}}}
             end
-    catch Class:Reason ->
+    catch Class:Reason:Stacktrace ->
         %% TODO Maybe a function_clause catch here to allow
         %% not having to have a catch-all clause in websocket_info CB?
         error_logger:error_msg(
@@ -476,8 +474,7 @@ handle_info(Msg, State,
           "** Last message was ~p~n"
           "** Handler state was ~p~n"
           "** Stacktrace: ~p~n~n",
-          [Handler, websocket_info, 3, Class, Reason, Msg, HState0,
-           erlang:get_stacktrace()]),
+          [Handler, websocket_info, 3, Class, Reason, Msg, HState0, Stacktrace]),
         websocket_close(WSReq, Handler, HState0, Reason),
         {stop, Reason, Context}
     end.
@@ -541,15 +538,14 @@ handle_websocket_frame(Data, #context{}=Context0) ->
                                          wsreq=WSReqN2,
                                          handler={Handler, HStateN2}}}
                 end
-            catch Class:Reason ->
+            catch Class:Reason:Stacktrace ->
               error_logger:error_msg(
                 "** Websocket client ~p terminating in ~p/~p~n"
                 "   for the reason ~p:~p~n"
                 "** Websocket message was ~p~n"
                 "** Handler state was ~p~n"
                 "** Stacktrace: ~p~n~n",
-                [Handler, websocket_handle, 3, Class, Reason, Message, HState0,
-                  erlang:get_stacktrace()]),
+                [Handler, websocket_handle, 3, Class, Reason, Message, HState0, Stacktrace]),
               {stop, Reason, Context#context{ wsreq=WSReqN }}
             end;
         {recv, WSReqN, BufferN} ->
@@ -621,7 +617,7 @@ websocket_close(WSReq, Handler, HandlerState, Reason) ->
     end.
 %% TODO {stop, Reason, Context}
 
-maybe_cancel_reconnect(Context=#context{reconnect_tref=undefined}) ->
+maybe_cancel_reconnect(Context=#context{reconnect_tref = undefined}) ->
     Context;
 maybe_cancel_reconnect(Context=#context{reconnect_tref=Tref}) when is_reference(Tref) ->
     gen_fsm:cancel_timer(Tref),
