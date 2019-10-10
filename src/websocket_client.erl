@@ -273,7 +273,7 @@ connect(#context{
             %         WSReq2 = websocket_req:set([{keepalive_timer, NewTimer}], WSReq1),
             %         {next_state, handshaking, Context2#context{wsreq=WSReq2, ka_attempts=(KAs+1)}}
             % end;
-        {error,_} = Error ->
+        {error, _} = Error ->
             disconnect(Error, Context2)
     end.
 
@@ -290,6 +290,7 @@ open_connection(#context{
     gen_tcp:connect(Host, Port, Opts).
 
 maybe_send_proxy_handshake(WSReq, Headers, #context{proxy = undefined} = Context) ->
+    ok = WSReq,
     case send_handshake(WSReq, Headers, Context) of
         ok ->
             {next_state, handshaking,  Context#context{wsreq = WSReq}};
