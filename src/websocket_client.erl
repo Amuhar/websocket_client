@@ -283,6 +283,7 @@ open_connection(#context{
                     transport = T,
                     target = {_Protocol, Host, Port, _Path}
                 }) ->
+    ok = T#transport.opts,
     (T#transport.mod):connect(Host, Port, T#transport.opts);
 open_connection(#context{
                     proxy = {Host, Port}
