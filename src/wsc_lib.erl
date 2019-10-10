@@ -8,11 +8,11 @@
 -include("websocket_req.hrl").
 
 -export([create_auth_header/3]).
--export([create_handshake/2]).
+-export([create_handshake/2, create_proxy_handshake/2]).
 -export([encode_frame/1]).
 -export([generate_ws_key/0]).
 
--export([validate_handshake/2]).
+-export([validate_handshake/2, validate_proxy_handshake/2]).
 -export([decode_frame/2]).
 -export([decode_frame/5]).
 
@@ -34,6 +34,14 @@ create_handshake(WSReq, ExtraHeaders) ->
      "Sec-WebSocket-Key: ", Key, "\r\n"
      "Upgrade: websocket\r\n",
      [ [Header, ": ", Value, "\r\n"] || {Header, Value} <- ExtraHeaders],
+     "\r\n"].
+
+create_proxy_handshake(WSReq, ExtraHeaders) ->
+    [Host, Port] = websocket_req:get([host, port], WSReq),
+    ["CONNECT ", Host, ":", Port, " HTTP/1.1\r\n"
+     "Host: ", Host, "\r\n"
+     "Proxy-Connection: keep-alive\r\n",
+     [[Header, ": ", Value, "\r\n"] || {Header, Value} <- ExtraHeaders],
      "\r\n"].
 
 %% @doc Validate handshake response challenge
@@ -58,6 +66,21 @@ validate_handshake(HandshakeResponse, Key) ->
                         _Invalid   -> {error, invalid_handshake}
                     end;
                 _ -> {error, {Code, Message}}
+            end;
+        _ ->
+            {notfound, HandshakeResponse}
+    end.
+
+validate_proxy_handshake(HandshakeResponse, Key) ->
+    case re:run(HandshakeResponse, "\\r\\n\\r\\n") of
+        {match, _} ->
+            {ok, Status, Header, Buffer} = consume_response(HandshakeResponse),
+            {_Version, Code, Message} = Status,
+            case Code of
+                200 ->
+                    {ok, Buffer};
+                _ ->
+                    {error, {Code, Message}}
             end;
         _ ->
             {notfound, HandshakeResponse}

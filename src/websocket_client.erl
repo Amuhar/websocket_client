@@ -28,6 +28,8 @@
 -export([connected/3]).
 -export([handshaking/2]).
 -export([handshaking/3]).
+-export([proxy_handshaking/2]).
+-export([proxy_handshaking/3]).
 
 -type state_name() :: atom().
 
@@ -262,11 +264,11 @@ connect(#context{
     case open_connection(Context2) of
         {ok, Socket} ->
             WSReq1 = websocket_req:socket(Socket, WSReq0),
-            case send_handshake(WSReq1, Headers, Context) of
+            case send_proxy_handshake(WSReq1, Headers, Context) of
                 ok ->
                     % case websocket_req:keepalive(WSReq1) of
                     %     infinity ->
-                            {next_state, handshaking, Context2#context{ wsreq=WSReq1}};
+                            {next_state, proxy_handshaking, Context2#context{ wsreq=WSReq1}};
                     %     KeepAlive ->
                     %         NewTimer = erlang:send_after(KeepAlive, self(), keepalive),
                     %         WSReq2 = websocket_req:set([{keepalive_timer, NewTimer}], WSReq1),
@@ -344,6 +346,11 @@ connected({send, Frame}, _From, #context{wsreq=WSReq}=Context) ->
 connected(_Event, _From, Context) ->
     {reply, {error, unhandled_sync_event}, connected, Context}.
 
+proxy_handshaking(_Event, Context) ->
+    {next_state, proxy_handshaking, Context}.
+proxy_handshaking(_Event, _From, Context) ->
+    {reply, {error, unhandled_sync_event}, proxy_handshaking, Context}.
+
 handshaking(_Event, Context) ->
     {next_state, handshaking, Context}.
 handshaking(_Event, _From, Context) ->
@@ -400,6 +407,30 @@ handle_info({TransError, _Socket, Reason},
     ok = websocket_close(WSReq, Handler, HState0, {TransError, Reason}),
     {stop, {socket_error, Reason}, Context};
 handle_info({Trans, _Socket, Data},
+            proxy_handshaking,
+            #context{
+               transport = #transport{name = Trans},
+               wsreq = WSReq0,
+               headers = Headers,
+               handler = {Handler, HState0},
+               buffer = Buffer
+            } = Context0) ->
+    MaybeHandshakeResp = << Buffer/binary, Data/binary >>,
+    case wsc_lib:validate_proxy_handshake(MaybeHandshakeResp, websocket_req:key(WSReq0)) of
+        {error, _} = Error ->
+            ok = {Error, MaybeHandshakeResp},
+            disconnect(Error, Context0);
+        {notfound, _} ->
+            {next_state, proxy_handshaking, Context0#context{buffer = MaybeHandshakeResp}};
+        {ok, Remaining} ->
+            case send_handshake(WSReq0, Headers, Context0) of
+                ok ->
+                    handle_websocket_frame(Remaining, Context0#context{buffer = <<>>}, handshaking);
+                {error, Error} ->
+                  {stop, error, Context0}
+            end
+    end;
+handle_info({Trans, _Socket, Data},
             handshaking,
             #context{
                transport = #transport{ name=Trans },
@@ -423,7 +454,7 @@ handle_info({Trans, _Socket, Data},
                                 KA = websocket_req:keepalive(WSReq1),
                                 {ok, HState1, KA};
                             {ok, _HS1, KA}=Result ->
-                                erlang:send_after(KA, self(), keepalive),
+                                % erlang:send_after(KA, self(), keepalive),
                                 Result
                         end,
                     WSReq2 = websocket_req:keepalive(KeepAlive, WSReq1),
@@ -433,7 +464,8 @@ handle_info({Trans, _Socket, Data},
                                 wsreq = WSReq2,
                                 handler = {Handler, HState2},
                                 buffer = <<>>
-                      }
+                      },
+                      connected
                     );
                 {error, Error} ->
                   ok = Error,
@@ -445,7 +477,7 @@ handle_info({Trans, _Socket, Data},
             #context{
                transport=#transport{ name=Trans }
               }=Context) ->
-    handle_websocket_frame(Data, Context);
+    handle_websocket_frame(Data, Context, connected);
 handle_info(Msg, State,
             #context{
                wsreq=WSReq,
@@ -499,7 +531,7 @@ maybe_upgrade_socket(#context{transport = T, wsreq = Req0} = Context) ->
 
 % Recursively handle all frames that are in the buffer;
 % If the last frame is incomplete, leave it in the buffer and wait for more.
-handle_websocket_frame(Data, #context{}=Context0) ->
+handle_websocket_frame(Data, #context{}=Context0, NextState) ->
     Context = Context0#context{ka_attempts=0},
     #context{
                handler={Handler, HState0},
@@ -529,9 +561,9 @@ handle_websocket_frame(Data, #context{}=Context0) ->
                                      buffer = <<>>},
                         case BufferN of
                             <<>> ->
-                                {next_state, connected, Context2};
+                                {next_state, NextState, Context2};
                             _ ->
-                                handle_websocket_frame(BufferN, Context2)
+                                handle_websocket_frame(BufferN, Context2, NextState)
                         end;
                     {close, Error, WSReqN2, Handler, HStateN2} ->
                         {stop, Error, Context#context{
@@ -549,7 +581,7 @@ handle_websocket_frame(Data, #context{}=Context0) ->
               {stop, Reason, Context#context{ wsreq=WSReqN }}
             end;
         {recv, WSReqN, BufferN} ->
-            {next_state, connected, Context#context{
+            {next_state, NextState, Context#context{
                                       handler={Handler, HState0},
                                       wsreq=WSReqN,
                                       buffer=BufferN}};
@@ -577,11 +609,21 @@ handle_response({close, Payload, HandlerState}, Handler, WSReq) ->
     {close, normal, WSReq, Handler, HandlerState}.
 
 %% @doc Send http upgrade request and validate handshake response challenge
--spec send_handshake(WSReq :: websocket_req:req(), [{string(), string()}], #context{}) ->
+-spec send_handshake(WSReq :: websocket_req:req(), [{string(), string()}], #context{}) -> ok.
+send_handshake(WSReq, ExtraHeaders, Context) ->
+    Handshake = wsc_lib:create_handshake(WSReq, ExtraHeaders),
+    send_handshake(Handshake, WSReq, ExtraHeaders, Context).
+
+-spec send_proxy_handshake(WSReq :: websocket_req:req(), [{string(), string()}], #context{}) -> ok.
+send_proxy_handshake(WSReq, ExtraHeaders, Context) ->
+    Handshake = wsc_lib:create_proxy_handshake(WSReq, ExtraHeaders),
+    send_handshake(Handshake, WSReq, ExtraHeaders, Context).
+
+%% @doc Send http upgrade request and validate handshake response challenge
+-spec send_handshake(Handshake :: iolist(), WSReq :: websocket_req:req(), [{string(), string()}], #context{}) ->
     ok
     | {error, term()}.
-send_handshake(WSReq, ExtraHeaders, #context{proxy = Proxy} = Context) ->
-    Handshake = wsc_lib:create_handshake(WSReq, ExtraHeaders),
+send_handshake(Handshake, WSReq, ExtraHeaders, #context{proxy = Proxy} = Context) ->
     [Transport, Socket] = websocket_req:get([transport, socket], WSReq),
     case Proxy of
       undefined ->
