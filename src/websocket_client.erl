@@ -294,7 +294,6 @@ maybe_send_proxy_handshake(WSReq, Headers, #context{proxy = undefined} = Context
 maybe_send_proxy_handshake(WSReq, Headers, #context{proxy = {_Host, _Port}} = Context) ->
     case send_proxy_handshake(WSReq, Headers, Context) of
         ok ->
-            5 = WSReq,
             {next_state, proxy_handshaking,  Context#context{wsreq = WSReq}};
         Error ->
             disconnect(Error, Context)
