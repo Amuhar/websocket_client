@@ -428,11 +428,12 @@ handle_info({Trans, _Socket, Data},
         {notfound, _} ->
             {next_state, proxy_handshaking, Context0#context{buffer = MaybeHandshakeResp}};
         {ok, Remaining} ->
-            5 = Remaining,
             case send_handshake(WSReq0, Headers, Context0) of
                 ok ->
+                    7 = WSReq0,
                     handle_websocket_frame(Remaining, Context0#context{buffer = <<>>}, handshaking);
                 {error, Error} ->
+                    9 = Error,
                   {stop, error, Context0}
             end
     end;
