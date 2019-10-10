@@ -174,7 +174,7 @@ init([Protocol, Host, Port, Path, Handler, HandlerArgs, Opts]) ->
         end,
     SSLVerify = proplists:get_value(ssl_verify, Opts, verify_none),
     SockOpts  = proplists:get_value(socket_opts, Opts, []),
-    Transport = transport(Protocol, ssl_verify(SSLVerify), SockOpts),
+    Transport = transport(ws, ssl_verify(SSLVerify), SockOpts),
     WSReq = websocket_req:new(
                 Protocol, Host, Port, Path,
                 Transport, wsc_lib:generate_ws_key()
@@ -485,10 +485,10 @@ handle_info({Trans, _Socket, Data},
     handle_websocket_frame(Data, Context, connected);
 handle_info(Msg, State,
             #context{
-               wsreq=WSReq,
-               handler={Handler, HState0},
-               buffer=Buffer
-              }=Context) ->
+               wsreq = WSReq,
+               handler = {Handler, HState0},
+               buffer = Buffer
+              } = Context) ->
     try Handler:websocket_info(Msg, WSReq, HState0) of
         HandlerResponse ->
             case handle_response(HandlerResponse, Handler, WSReq) of
