@@ -261,6 +261,7 @@ connect(#context{
            ka_attempts = KAs
           } = Context) ->
     Context2 = maybe_cancel_reconnect(Context),
+    ok = Context2,
     case open_connection(Context2) of
         {ok, Socket} ->
             WSReq1 = websocket_req:socket(Socket, WSReq0),
