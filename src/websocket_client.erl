@@ -444,6 +444,7 @@ handle_info({Trans, _Socket, Data},
                buffer = Buffer
               } = Context0) ->
     MaybeHandshakeResp = << Buffer/binary, Data/binary >>,
+    8 = MaybeHandshakeResp,
     case wsc_lib:validate_handshake(MaybeHandshakeResp, websocket_req:key(WSReq0)) of
         {error,_} = Error ->
             ok = {Error, MaybeHandshakeResp},
@@ -536,7 +537,7 @@ maybe_upgrade_socket(#context{transport = T, wsreq = Req0} = Context) ->
 
 % Recursively handle all frames that are in the buffer;
 % If the last frame is incomplete, leave it in the buffer and wait for more.
-handle_websocket_frame(Data, #context{}=Context0, NextState) ->
+handle_websocket_frame(Data, #context{} = Context0, NextState) ->
     Context = Context0#context{ka_attempts=0},
     #context{
                handler={Handler, HState0},
