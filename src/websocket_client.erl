@@ -428,11 +428,14 @@ handle_info({Trans, _Socket, Data},
         {notfound, _} ->
             {next_state, proxy_handshaking, Context0#context{buffer = MaybeHandshakeResp}};
         {ok, Remaining} ->
-            case send_handshake(WSReq0, Headers, Context0) of
-                ok ->
-                    handle_websocket_frame(Remaining, Context0#context{buffer = <<>>}, handshaking);
-                {error, Error} ->
-                  {stop, error, Context0}
+            case handle_websocket_frame(Remaining, Context0#context{buffer = <<>>}, handshaking) of
+                {next_state, handshaking, Context1} = Res ->
+                    case send_handshake(WSReq0, Headers, Context1) of
+                      ok -> Res;
+                      {error, Error} ->
+                          {stop, error, Context1}
+                    end;
+                Res -> Res
             end
     end;
 handle_info({Trans, _Socket, Data},
@@ -444,10 +447,8 @@ handle_info({Trans, _Socket, Data},
                buffer = Buffer
               } = Context0) ->
     MaybeHandshakeResp = << Buffer/binary, Data/binary >>,
-    8 = MaybeHandshakeResp,
     case wsc_lib:validate_handshake(MaybeHandshakeResp, websocket_req:key(WSReq0)) of
         {error,_} = Error ->
-            ok = {Error, MaybeHandshakeResp},
             disconnect(Error, Context0);
         {notfound, _} ->
             {next_state, handshaking, Context0#context{buffer = MaybeHandshakeResp}};
