@@ -244,7 +244,6 @@ terminate(Reason, StateName,
     case websocket_req:socket(WSReq) of
         undefined -> ok;
         Socket ->
-            ok = Reason,
             _ = (T#transport.mod):close(Socket)
     end,
     ok.
