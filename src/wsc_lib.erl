@@ -40,6 +40,7 @@ create_proxy_handshake(WSReq, ExtraHeaders) ->
     [Host, Port] = websocket_req:get([host, port], WSReq),
     ["CONNECT ", Host, ":", integer_to_list(Port), " HTTP/1.1\r\n"
      "Host: ", Host, "\r\n",
+     "Proxy-Connection: keep-alive", "\r\n",
      [[Header, ": ", Value, "\r\n"] || {Header, Value} <- ExtraHeaders],
      "\r\n"].
 
