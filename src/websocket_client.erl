@@ -518,23 +518,23 @@ handle_info(Msg, State,
         {stop, Reason, Context}
     end.
 
-maybe_upgrade_socket(#context{proxy = undefined} = Context) ->
-    {ok, Context};
-maybe_upgrade_socket(#context{transport = T, wsreq = Req0} = Context) ->
-    case T#transport.name of
-        ssl ->
-            Socket = websocket_req:socket(Req0),
-            case ssl:connect(Socket, T#transport.opts) of
-                {ok, SSLSocket} ->
-                  Req1 = websocket_req:socket(SSLSocket, Req0),
-                  {ok, Context#context{wsreq = Req1}};
-                {error, Error} ->
-                    gen_tcp:close(Socket),
-                    {error, Error}
-            end;    
-        tcp ->
-            {ok, Context}
-    end.
+maybe_upgrade_socket(#context{proxy = Proxy} = Context) ->
+    {ok, Context}.
+% maybe_upgrade_socket(#context{transport = T, wsreq = Req0} = Context) ->
+%     case T#transport.name of
+%         ssl ->
+%             Socket = websocket_req:socket(Req0),
+%             case ssl:connect(Socket, T#transport.opts) of
+%                 {ok, SSLSocket} ->
+%                   Req1 = websocket_req:socket(SSLSocket, Req0),
+%                   {ok, Context#context{wsreq = Req1}};
+%                 {error, Error} ->
+%                     gen_tcp:close(Socket),
+%                     {error, Error}
+%             end;    
+%         tcp ->
+%             {ok, Context}
+%     end.
 
 % Recursively handle all frames that are in the buffer;
 % If the last frame is incomplete, leave it in the buffer and wait for more.
